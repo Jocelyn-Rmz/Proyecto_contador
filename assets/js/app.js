@@ -7,7 +7,55 @@ import {
   loadThresholds
 } from "./ui.js";
 
-// Elementos base
+/* ===========================
+   MockAPI (POST en tiempo real)
+   =========================== */
+const MOCKAPI_RESOURCE_URL = "https://68b89981b71540504328aaf0.mockapi.io/api/v1/gestos";
+
+// Encolar envíos para no saturar
+let _sendQueue = [];
+let _sending = false;
+
+// Throttle mínimo entre envíos (ms)
+const MIN_POST_INTERVAL = 800;
+let _lastPostAt = 0;
+
+async function postToMockAPI(payload) {
+  if (!MOCKAPI_RESOURCE_URL) return;
+  const now = Date.now();
+  const elapsed = now - _lastPostAt;
+
+  _sendQueue.push(payload);
+  if (_sending || elapsed < MIN_POST_INTERVAL) {
+    return; // se enviará en el siguiente ciclo
+  }
+
+  _sending = true;
+  try {
+    while (_sendQueue.length) {
+      const data = _sendQueue.shift();
+      const res = await fetch(MOCKAPI_RESOURCE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        console.warn("[MockAPI] POST no OK", res.status);
+      }
+      _lastPostAt = Date.now();
+      // Respeta el throttle entre posts en ráfaga
+      await new Promise(r => setTimeout(r, MIN_POST_INTERVAL));
+    }
+  } catch (err) {
+    console.error("[MockAPI] Error POST:", err);
+  } finally {
+    _sending = false;
+  }
+}
+
+/* ===========================
+   Elementos base y estados
+   =========================== */
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const ctx = overlay.getContext("2d");
@@ -17,11 +65,10 @@ const btnStart = document.getElementById("btnStart");
 const btnStop  = document.getElementById("btnStop");
 const btnReset = document.getElementById("btnReset");
 
-// Estados y helpers
 let camera = null;
 let camActive = false;
 
-// Indicador de estado de cámara
+// Indicador de estado de cámara (badge en UI)
 const camStatusEl = document.getElementById("camStatus");
 function setCamStatus(isOn){
   if (!camStatusEl) return;
@@ -35,21 +82,22 @@ function setCamStatus(isOn){
   }
 }
 
-// MediaPipe FaceMesh
+// MediaPipe
 let faceMesh = null;
 let latestLandmarks = null;
 
-// Contadores
+// Contadores de eventos
 let counters = null;
 
-// Ajusta tamaño del canvas al del video
+/* ===========================
+   Utilidades UI
+   =========================== */
 function fitCanvas() {
   const rect = video.getBoundingClientRect();
   overlay.width = rect.width;
   overlay.height = rect.height;
 }
 
-// Animación de números
 function animateCounter(id) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -57,7 +105,9 @@ function animateCounter(id) {
   setTimeout(() => el.classList.remove("animate__animated", "animate__pulse"), 400);
 }
 
-// Inicializa Face Mesh
+/* ===========================
+   FaceMesh
+   =========================== */
 function initFaceMesh() {
   faceMesh = new FaceMesh({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
@@ -78,7 +128,9 @@ function initFaceMesh() {
   });
 }
 
-// Inicia cámara
+/* ===========================
+   Cámara
+   =========================== */
 async function startCamera() {
   if (camActive) return;
 
@@ -92,21 +144,16 @@ async function startCamera() {
   fitCanvas();
   window.addEventListener("resize", fitCanvas);
 
-  // MediaPipe Camera
-  const mpCamera = new Camera(video, {
-    onFrame: async () => {
-      await faceMesh.send({ image: video });
-    },
+  camera = new Camera(video, {
+    onFrame: async () => { await faceMesh.send({ image: video }); },
     width: 640,
     height: 480,
   });
-  camera = mpCamera;
   camera.start();
   camActive = true;
   setCamStatus(true);
 }
 
-// Detiene cámara
 function stopCamera() {
   if (!camActive) return;
 
@@ -116,64 +163,95 @@ function stopCamera() {
   if (stream) {
     for (const tr of stream.getTracks()) tr.stop();
   }
-
   video.srcObject = null;
+
   camActive = false;
   setCamStatus(false);
   console.log("[cam] Cámara detenida.");
 }
 
-// Bucle de renderizado
+/* ===========================
+   Render loop
+   =========================== */
 function renderLoop() {
-  if (!camActive) return; // se corta si se detuvo
+  if (!camActive) return;
 
-  // Pintar frame actual
+  // Dibuja frame actual
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   ctx.drawImage(video, 0, 0, overlay.width, overlay.height);
 
   if (latestLandmarks && counters) {
-    // Actualizar contadores y obtener métricas (EAR, MAR, BROW)
+    // Actualiza contadores y métricas
     const metrics = counters.update(latestLandmarks);
 
-    // Dibujar landmarks (puntos) sobre el rostro
+    // Landmarks y estados
     drawLandmarks(ctx, latestLandmarks, overlay.width, overlay.height);
-
-    // Actualizar estados (badges)
     updateStateBadges({
       eyeIsClosed: counters.eyeIsClosed,
       mouthIsOpen: counters.mouthIsOpen,
       browIsRaised: counters.browIsRaised
     });
 
-    // Actualizar contadores con animación
+    // UI contadores
     const blinkEl = document.getElementById("blinkCount");
     const browEl  = document.getElementById("browCount");
     const mouthEl = document.getElementById("mouthCount");
     if (blinkEl) blinkEl.textContent = counters.blinks;
     if (browEl)  browEl.textContent  = counters.browRaises;
     if (mouthEl) mouthEl.textContent = counters.mouthOpens;
-  }
 
-  // HUD de métricas (opcional: si lo tienes en ui.js puedes quitarlo aquí)
-  // ...
+    // ---- Enviar a MockAPI al cambiar los contadores ----
+    if (!renderLoop._lastSent) {
+      renderLoop._lastSent = { blinks: 0, browRaises: 0, mouthOpens: 0 };
+    }
+    const last = renderLoop._lastSent;
+    const cur  = {
+      blinks: counters.blinks,
+      browRaises: counters.browRaises,
+      mouthOpens: counters.mouthOpens,
+    };
+
+    if (cur.blinks !== last.blinks || cur.browRaises !== last.browRaises || cur.mouthOpens !== last.mouthOpens) {
+      renderLoop._lastSent = { ...cur };
+      const payload = {
+        Parpadeo: cur.blinks,
+        Cejas: cur.browRaises,
+        Boca: cur.mouthOpens,
+        Fecha_Hora: new Date().toISOString(),
+      };
+      postToMockAPI(payload);
+    }
+
+    // // DEBUG HUD opcional:
+    // ctx.fillStyle = "rgba(0,0,0,0.6)";
+    // ctx.fillRect(10, 10, 220, 80);
+    // ctx.fillStyle = "#00FF7F";
+    // ctx.font = "12px monospace";
+    // ctx.fillText(`EAR:  ${metrics.ear.toFixed(3)}`, 20, 30);
+    // ctx.fillText(`MAR:  ${metrics.mar.toFixed(3)}`, 20, 45);
+    // ctx.fillText(`BROW: ${metrics.brow.toFixed(3)}`, 20, 60);
+  }
 
   requestAnimationFrame(renderLoop);
 }
 
-// Principal
+/* ===========================
+   Main
+   =========================== */
 async function main() {
   setCamStatus(false);
 
-  // Carga info programador
+  // Cargar datos de programador
   loadProgrammerBox();
 
-  // Carga umbrales (si tu ui.js los maneja internamente; aquí solo inicializamos contadores)
-  const th = await loadThresholds(); // lee thresholds.json y/o localStorage
+  // Cargar umbrales base (para ExpressionCounters)
+  const th = await loadThresholds();
   counters = new ExpressionCounters(th);
 
+  // Inicializar FaceMesh
   initFaceMesh();
 
-  // Eventos UI
+  // Eventos
   btnStart?.addEventListener("click", async () => {
     try {
       await startCamera();
@@ -191,18 +269,28 @@ async function main() {
   btnReset?.addEventListener("click", () => {
     if (!counters) return;
     counters.blinks = counters.browRaises = counters.mouthOpens = 0;
+
     const blinkEl = document.getElementById("blinkCount");
     const browEl  = document.getElementById("browCount");
     const mouthEl = document.getElementById("mouthCount");
     if (blinkEl) blinkEl.textContent = "0";
     if (browEl)  browEl.textContent  = "0";
     if (mouthEl) mouthEl.textContent = "0";
+
     animateCounter("blinkCount");
     animateCounter("browCount");
     animateCounter("mouthCount");
+
+    // Registrar el reset en MockAPI (opcional)
+    postToMockAPI({
+      Parpadeo: 0,
+      Cejas: 0,
+      Boca: 0,
+      Fecha_Hora: new Date().toISOString(),
+    });
   });
 
-  // Recomendación de seguridad para getUserMedia
+  // Aviso HTTPS
   const isSecure = location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
   if (!isSecure) {
     console.warn("[ctx] La cámara requiere HTTPS o http://localhost.");
