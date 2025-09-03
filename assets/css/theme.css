@@ -1,0 +1,107 @@
+/* assets/css/theme.css
+   Nuevo diseño "neo dark" con glassmorphism y tipografías modernas.
+   Mantiene los mismos IDs para compatibilidad con el JS original.
+*/
+
+:root{
+  --primary-900:#0b1020;
+  --primary-700:#111a34;
+  --primary-500:#1d2b52;
+  --primary-400:#27427a;
+  --primary-300:#345aa8;
+  --ring: rgba(99, 102, 241, .35);
+}
+
+body{
+  background: radial-gradient(1200px 600px at 10% -20%, rgba(99,102,241,.08), transparent),
+              radial-gradient(1200px 600px at 110% 120%, rgba(34,197,94,.08), transparent),
+              #0b0e14;
+  min-height: 100dvh;
+}
+
+.bg-hero{
+  background: linear-gradient(180deg, rgba(13, 20, 35, .8), rgba(13, 20, 35, .2));
+}
+
+.bg-gradient-primary{
+  background: linear-gradient(90deg, var(--primary-700), var(--primary-500));
+}
+
+.glass{
+  backdrop-filter: blur(10px);
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.card-neo{
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+}
+
+.card-neo .card-header{
+  background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  font-weight: 600;
+}
+
+.stat{
+  padding: .75rem .5rem;
+  border-radius: .75rem;
+  border: 1px dashed rgba(255,255,255,.15);
+}
+.stat-num{
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  font-weight: 800;
+  line-height: 1;
+}
+.stat-label{
+  opacity: .75;
+  font-size: .85rem;
+}
+
+.footer-neo{
+  background: rgba(255,255,255,.03);
+}
+
+#overlay{
+  pointer-events: none;
+}
+
+button:focus, input:focus, .form-control:focus, .btn:focus{
+  box-shadow: 0 0 0 .25rem var(--ring)!important;
+}
+
+/* ====== Camera status badge ====== */
+.status-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .35rem .65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(255,255,255,.03);
+  font-weight: 600;
+  letter-spacing: .2px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.25);
+}
+.status-on{
+  color: #22c55e;
+  border-color: rgba(34,197,94,.35);
+  box-shadow: 0 0 0 .2rem rgba(34,197,94,.15);
+}
+.status-off{
+  color: #e11d48;
+  border-color: rgba(225,29,72,.35);
+  box-shadow: 0 0 0 .2rem rgba(225,29,72,.10);
+}
+
+/* ====== Dev card (programmerBox) ====== */
+.dev-card{display:grid;gap:.75rem;}
+.dev-head{display:grid;grid-template-columns:52px 1fr;gap:.75rem;align-items:center;}
+.dev-avatar{width:52px;height:52px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,rgba(99,102,241,.35),rgba(34,197,94,.25));border:1px solid rgba(255,255,255,.18);font-weight:800;letter-spacing:.5px;}
+.dev-name{margin:0;font-weight:700;line-height:1.1;}
+.dev-meta{margin:0;opacity:.75;font-size:.9rem;}
+.dev-actions{display:flex;flex-wrap:wrap;gap:.5rem;}
